@@ -1,6 +1,6 @@
 [package]
 name = "kaem-sdk"
-version = "0.0.1"
+version = "0.0.3"
 edition = "2024"
 description = "IPC transport SDK for kaem binaries"
 license = "MIT"
