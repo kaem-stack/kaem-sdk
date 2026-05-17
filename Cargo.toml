@@ -1,0 +1,9 @@
+[package]
+name = "kaem-ipc"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+tokio = { version = "1.52.3", features = ["net", "io-util", "rt-multi-thread", "macros"] }
+serde = { version = "1.0.228", features = ["derive"] }
+bincode = "1.3"
