@@ -2,6 +2,9 @@
 name = "kaem-sdk"
 version = "0.0.1"
 edition = "2024"
+description = "IPC transport SDK for kaem binaries"
+license = "MIT"
+repository = "https://github.com/mohammadzbib/kaem-ipc"
 
 [dependencies]
 tokio = { version = "1.52.3", features = ["net", "io-util", "rt-multi-thread", "macros"] }
