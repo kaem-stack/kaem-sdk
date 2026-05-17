@@ -1,6 +1,7 @@
 use bytes::{Buf, BufMut, BytesMut};
 use serde::{Serialize, de::DeserializeOwned};
 use std::marker::PhantomData;
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::UnixStream;
 use tokio_util::codec::{Decoder, Encoder, Framed};
 
@@ -53,4 +54,26 @@ impl<T: DeserializeOwned> Decoder for IpcCodec<T> {
 
 pub fn framed<T>(stream: UnixStream) -> Framed<UnixStream, IpcCodec<T>> {
     Framed::new(stream, IpcCodec::new())
+}
+
+pub async fn send<T: Serialize>(
+    stream: &mut UnixStream,
+    msg: &T,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let bytes = bincode::serialize(msg)?;
+    let len = bytes.len() as u32;
+    stream.write_all(&len.to_be_bytes()).await?;
+    stream.write_all(&bytes).await?;
+    Ok(())
+}
+
+pub async fn receive<T: DeserializeOwned>(
+    stream: &mut UnixStream,
+) -> Result<T, Box<dyn std::error::Error + Send + Sync>> {
+    let mut len_buf = [0u8; 4];
+    stream.read_exact(&mut len_buf).await?;
+    let len = u32::from_be_bytes(len_buf) as usize;
+    let mut buf = vec![0u8; len];
+    stream.read_exact(&mut buf).await?;
+    Ok(bincode::deserialize(&buf)?)
 }
