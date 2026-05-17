@@ -1,6 +1,7 @@
 pub mod decrypt;
 pub mod encrypt;
 pub mod generate_keys;
+pub mod ipc;
 
 use serde::{Deserialize, Serialize};
 
