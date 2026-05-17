@@ -77,3 +77,119 @@ pub async fn receive<T: DeserializeOwned>(
     stream.read_exact(&mut buf).await?;
     Ok(bincode::deserialize(&buf)?)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tokio_util::codec::{Decoder, Encoder};
+
+    #[test]
+    fn codec_encodes_length_prefix() {
+        let mut codec = IpcCodec::<String>::new();
+        let mut buf = BytesMut::new();
+
+        codec.encode("hi".to_string(), &mut buf).unwrap();
+
+        let payload = bincode::serialize("hi").unwrap();
+        let expected_len = payload.len() as u32;
+        assert_eq!(&buf[..4], &expected_len.to_be_bytes());
+        assert_eq!(&buf[4..], payload.as_slice());
+    }
+
+    #[test]
+    fn codec_round_trip() {
+        let mut codec = IpcCodec::<String>::new();
+        let mut buf = BytesMut::new();
+
+        codec.encode("hello ipc".to_string(), &mut buf).unwrap();
+        let result = codec.decode(&mut buf).unwrap();
+
+        assert_eq!(result, Some("hello ipc".to_string()));
+        assert!(buf.is_empty());
+    }
+
+    #[test]
+    fn codec_decode_waits_for_header() {
+        let mut codec = IpcCodec::<String>::new();
+        let mut buf = BytesMut::from(&[0u8, 0u8][..]); // only 2 of 4 header bytes
+
+        assert_eq!(codec.decode(&mut buf).unwrap(), None);
+    }
+
+    #[test]
+    fn codec_decode_waits_for_full_payload() {
+        let mut codec = IpcCodec::<String>::new();
+        let mut buf = BytesMut::new();
+        buf.put_u32(100); // claims 100 bytes of payload
+        buf.extend_from_slice(&[0u8; 10]); // only 10 bytes present
+
+        assert_eq!(codec.decode(&mut buf).unwrap(), None);
+    }
+
+    #[test]
+    fn codec_decode_multiple_frames() {
+        let mut codec = IpcCodec::<u32>::new();
+        let mut buf = BytesMut::new();
+
+        codec.encode(1u32, &mut buf).unwrap();
+        codec.encode(2u32, &mut buf).unwrap();
+        codec.encode(3u32, &mut buf).unwrap();
+
+        assert_eq!(codec.decode(&mut buf).unwrap(), Some(1u32));
+        assert_eq!(codec.decode(&mut buf).unwrap(), Some(2u32));
+        assert_eq!(codec.decode(&mut buf).unwrap(), Some(3u32));
+        assert_eq!(codec.decode(&mut buf).unwrap(), None);
+    }
+
+    #[tokio::test]
+    async fn send_receive_round_trip() {
+        let (mut a, mut b) = UnixStream::pair().unwrap();
+
+        send(&mut a, &"hello world".to_string()).await.unwrap();
+        let received: String = receive(&mut b).await.unwrap();
+
+        assert_eq!(received, "hello world");
+    }
+
+    #[tokio::test]
+    async fn send_receive_binary_payload() {
+        let (mut a, mut b) = UnixStream::pair().unwrap();
+        let payload: Vec<u8> = (0u8..=255).collect();
+
+        send(&mut a, &payload).await.unwrap();
+        let received: Vec<u8> = receive(&mut b).await.unwrap();
+
+        assert_eq!(received, payload);
+    }
+
+    #[tokio::test]
+    async fn send_command_receive_event_pattern() {
+        let (mut a, mut b) = UnixStream::pair().unwrap();
+
+        // a sends a command, b processes and sends back an event
+        tokio::join!(
+            async {
+                send(&mut a, &10u64).await.unwrap();
+                let event: u64 = receive(&mut a).await.unwrap();
+                assert_eq!(event, 20u64);
+            },
+            async {
+                let cmd: u64 = receive(&mut b).await.unwrap();
+                send(&mut b, &(cmd * 2)).await.unwrap();
+            }
+        );
+    }
+
+    #[tokio::test]
+    async fn send_multiple_messages_in_sequence() {
+        let (mut a, mut b) = UnixStream::pair().unwrap();
+
+        for i in 0u32..5 {
+            send(&mut a, &i).await.unwrap();
+        }
+        for expected in 0u32..5 {
+            let received: u32 = receive(&mut b).await.unwrap();
+            assert_eq!(received, expected);
+        }
+    }
+}
