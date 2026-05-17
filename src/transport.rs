@@ -11,7 +11,9 @@ pub struct IpcCodec<T> {
 
 impl<T> IpcCodec<T> {
     pub fn new() -> Self {
-        Self { _phantom: PhantomData }
+        Self {
+            _phantom: PhantomData,
+        }
     }
 }
 
